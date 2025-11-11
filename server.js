@@ -1,7 +1,7 @@
 require('dotenv').config();
 const express = require('express');
 const mongoose = require('mongoose');
-const session = require('cookie-session');
+const session = require('express-session');  // 改用 express-session，因為 cookie-session 不支援 resave/saveUninitialized 選項，且更適合伺服器端 session 管理
 const passport = require('passport');
 const GoogleStrategy = require('passport-google-oauth20').Strategy;
 
@@ -11,85 +11,206 @@ app.set('view engine', 'ejs');
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
 app.use(express.static('public'));
-app.use(session({ secret: process.env.SESSION_SECRET || 'secret', resave: false, saveUninitialized: false }));
+
+// Session 中介軟體（使用 express-session，並確保 secret 來自 env）
+app.use(session({
+  secret: process.env.SESSION_SECRET || 'default_secret_change_me',  // 建議在 .env 中設定強隨機 secret
+  resave: false,
+  saveUninitialized: false,
+  cookie: { secure: process.env.NODE_ENV === 'production' }  // 生產環境強制 HTTPS cookie
+}));
 app.use(passport.initialize());
 app.use(passport.session());
 
-mongoose.connect(process.env.MONGODB_URI);
-const db = mongoose.connection;
-db.on('error', () => console.log('MongoDB error'));
-db.once('open', () => console.log('MongoDB Connected'));
+// MongoDB 連線（新增錯誤處理）
+mongoose.connect(process.env.MONGODB_URI, { useNewUrlParser: true, useUnifiedTopology: true })
+  .then(() => console.log('MongoDB Connected'))
+  .catch(err => console.error('MongoDB connection error:', err));
 
-const User = mongoose.model('User', new mongoose.Schema({ googleId: String, name: String, email: String }));
-const Item = mongoose.model('Item', new mongoose.Schema({ title: String, author: String, isbn: String }));
+// Schema 定義（無變更，但確保 ISBN 是 String）
+const UserSchema = new mongoose.Schema({
+  googleId: String,
+  name: String,
+  email: String
+});
+const ItemSchema = new mongoose.Schema({
+  title: String,
+  author: String,
+  isbn: String
+  // 如果需要，可加 userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User' } 來關聯使用者
+});
 
+const User = mongoose.model('User', UserSchema);
+const Item = mongoose.model('Item', ItemSchema);
+
+// Passport Google 策略（callbackURL 用 env，建議設為 HTTPS，如 ngrok URL）
 passport.use(new GoogleStrategy({
   clientID: process.env.GOOGLE_CLIENT_ID,
   clientSecret: process.env.GOOGLE_CLIENT_SECRET,
-  callbackURL: process.env.GOOGLE_CALLBACK_URL || "http://3.26.99.126:3000/auth/google/callback"
+  callbackURL: process.env.GOOGLE_CALLBACK_URL || 'http://localhost:3000/auth/google/callback'  // 改為 env，生產用 HTTPS 域名/ ngrok
 }, async (accessToken, refreshToken, profile, done) => {
-  let user = await User.findOne({ googleId: profile.id });
-  if (!user) {
-    user = await new User({
-      googleId: profile.id,
-      name: profile.displayName,
-      email: profile.emails?.[0]?.value || ''
-    }).save();
+  try {
+    let user = await User.findOne({ googleId: profile.id });
+    if (!user) {
+      user = new User({
+        googleId: profile.id,
+        name: profile.displayName,
+        email: profile.emails?.[0]?.value || ''
+      });
+      await user.save();
+    }
+    return done(null, user);
+  } catch (err) {
+    return done(err);
   }
-  done(null, user);
 }));
 
 passport.serializeUser((user, done) => done(null, user.id));
 passport.deserializeUser(async (id, done) => {
-  const user = await User.findById(id);
-  done(null, user);
+  try {
+    const user = await User.findById(id);
+    done(null, user);
+  } catch (err) {
+    done(err);
+  }
 });
 
-app.get('/', (req, res) => req.user ? res.redirect('/items') : res.redirect('/login'));
+// 根路由（無變更）
+app.get('/', (req, res) => {
+  if (req.user) {
+    res.redirect('/items');
+  } else {
+    res.redirect('/login');
+  }
+});
+
 app.get('/login', (req, res) => res.render('login'));
 
+// Google 登入路由（無變更）
 app.get('/auth/google', passport.authenticate('google', { scope: ['profile', 'email'] }));
+
 app.get('/auth/google/callback',
   passport.authenticate('google', { failureRedirect: '/login' }),
   (req, res) => res.redirect('/items')
 );
 
-app.get('/logout', (req, res) => { req.logout(() => {}); res.redirect('/login'); });
-
-const ensureAuth = (req, res, next) => req.user ? next() : res.redirect('/login');
-
-app.get('/items', ensureAuth, async (req, res) => {
-  const search = req.query.search || '';
-  const items = await Item.find({
-    $or: [{ title: { $regex: search, $options: 'i' } }, { author: { $regex: search, $options: 'i' } }]
+// 登出（新增錯誤處理）
+app.get('/logout', (req, res, next) => {
+  req.logout((err) => {
+    if (err) return next(err);
+    res.redirect('/login');
   });
-  res.render('index', { items, search, user: req.user });
+});
+
+// 驗證中介軟體（無變更）
+const ensureAuth = (req, res, next) => {
+  if (req.isAuthenticated()) {
+    return next();
+  }
+  res.redirect('/login');
+};
+
+// CRUD 網頁路由
+app.get('/items', ensureAuth, async (req, res) => {
+  try {
+    const search = req.query.search || '';
+    const items = await Item.find({
+      $or: [
+        { title: { $regex: search, $options: 'i' } },
+        { author: { $regex: search, $options: 'i' } }
+      ]
+    });
+    res.render('index', { items, search, user: req.user });
+  } catch (err) {
+    console.error(err);
+    res.status(500).send('Server error');
+  }
 });
 
 app.get('/items/create', ensureAuth, (req, res) => res.render('create'));
-app.post('/items', ensureAuth, async (req, res) => { await new Item(req.body).save(); res.redirect('/items'); });
+
+app.post('/items', ensureAuth, async (req, res) => {
+  try {
+    const newItem = new Item(req.body);
+    await newItem.save();
+    res.redirect('/items');
+  } catch (err) {
+    console.error(err);
+    res.status(500).send('Server error');
+  }
+});
 
 app.get('/items/edit/:id', ensureAuth, async (req, res) => {
-  const item = await Item.findById(req.params.id);
-  res.render('edit', { item });
+  try {
+    const item = await Item.findById(req.params.id);
+    if (!item) return res.status(404).send('Item not found');
+    res.render('edit', { item });
+  } catch (err) {
+    console.error(err);
+    res.status(500).send('Server error');
+  }
 });
+
 app.post('/items/update/:id', ensureAuth, async (req, res) => {
-  await Item.findByIdAndUpdate(req.params.id, req.body);
-  res.redirect('/items');
+  try {
+    await Item.findByIdAndUpdate(req.params.id, req.body);
+    res.redirect('/items');
+  } catch (err) {
+    console.error(err);
+    res.status(500).send('Server error');
+  }
 });
 
 app.post('/items/delete/:id', ensureAuth, async (req, res) => {
-  await Item.findByIdAndDelete(req.params.id);
-  res.redirect('/items');
+  try {
+    await Item.findByIdAndDelete(req.params.id);
+    res.redirect('/items');
+  } catch (err) {
+    console.error(err);
+    res.status(500).send('Server error');
+  }
 });
 
-app.get('/api/items', async (req, res) => res.json(await Item.find()));
-app.post('/api/items', async (req, res) => res.json(await new Item(req.body).save()));
-app.put('/api/items/:id', async (req, res) => res.json(await Item.findByIdAndUpdate(req.params.id, req.body, { new: true })));
+// REST API 路由（新增錯誤處理；如果需要驗證，可加 ensureAuth）
+app.get('/api/items', async (req, res) => {
+  try {
+    const items = await Item.find();
+    res.json(items);
+  } catch (err) {
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+app.post('/api/items', async (req, res) => {
+  try {
+    const newItem = new Item(req.body);
+    await newItem.save();
+    res.status(201).json(newItem);
+  } catch (err) {
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+app.put('/api/items/:id', async (req, res) => {
+  try {
+    const updatedItem = await Item.findByIdAndUpdate(req.params.id, req.body, { new: true, runValidators: true });
+    if (!updatedItem) return res.status(404).json({ error: 'Item not found' });
+    res.json(updatedItem);
+  } catch (err) {
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
 app.delete('/api/items/:id', async (req, res) => {
-  await Item.findByIdAndDelete(req.params.id);
-  res.json({ message: 'Deleted' });
+  try {
+    const deletedItem = await Item.findByIdAndDelete(req.params.id);
+    if (!deletedItem) return res.status(404).json({ error: 'Item not found' });
+    res.json({ message: 'Deleted successfully' });
+  } catch (err) {
+    res.status(500).json({ error: 'Server error' });
+  }
 });
 
+// 啟動伺服器
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));

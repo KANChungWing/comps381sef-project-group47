@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Edit Book - Group 47</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <div class="container">
+    <h1>Edit Book</h1>
+    <a href="/items">← Back</a>
+
+    <form action="/items/update/<%= item._id %>" method="POST">
+      <label>Title:</label>
+      <input type="text" name="title" value="<%= item.title %>" required>
+
+      <label>Author:</label>
+      <input type="text" name="author" value="<%= item.author %>" required>
+
+      <label>ISBN:</label>
+      <input type="text" name="isbn" value="<%= item.isbn %>">
+
+      <button type="submit" class="btn">Update Book</button>
+    </form>
+  </div>
+</body>
+</html>

@@ -1,124 +1,112 @@
+require('dotenv').config();
 const express = require('express');
 const mongoose = require('mongoose');
 const session = require('cookie-session');
-const bcrypt = require('bcrypt');
-const path = require('path');
+const passport = require('passport');
+const FacebookStrategy = require('passport-facebook').Strategy;
 
 const app = express();
-const PORT = process.env.PORT || 3000;
 
-// MongoDB Connection
-const dbURI = process.env.MONGODB_URI || 'mongodb://localhost:27017/comps381f_group47';
-mongoose.connect(dbURI, { useNewUrlParser: true, useUnifiedTopology: true })
-  .then(() => console.log('MongoDB Connected'))
-  .catch(err => console.log('DB Error:', err));
-
-// Models
-const User = require('./models/user');
-const Item = require('./models/item');
-
-// Middleware
+app.set('view engine', 'ejs');
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
-app.set('view engine', 'ejs');
-app.set('views', path.join(__dirname, 'views'));
 app.use(express.static('public'));
 app.use(session({
-  secret: 's381f-group47-secret',
+  secret: process.env.SESSION_SECRET || 'fallback_secret',
   resave: false,
   saveUninitialized: false
 }));
+app.use(passport.initialize());
+app.use(passport.session());
 
-// Auth Middleware
-const requireLogin = (req, res, next) => {
-  if (!req.session.userId) return res.redirect('/login');
-  next();
-};
+mongoose.connect(process.env.MONGODB_URI);
+const db = mongoose.connection;
+db.on('error', () => console.log('MongoDB error'));
+db.once('open', () => console.log('MongoDB Connected'));
 
-// === Routes ===
+const User = mongoose.model('User', new mongoose.Schema({
+  facebookId: String,
+  name: String,
+  email: String
+}));
 
-app.get('/', (req, res) => res.redirect('/login'));
+const Item = mongoose.model('Item', new mongoose.Schema({
+  title: String,
+  author: String,
+  isbn: String
+}));
 
-// Login
-app.get('/login', (req, res) => res.render('login', { error: null }));
-
-app.post('/login', async (req, res) => {
-  const { username, password } = req.body;
-  const user = await User.findOne({ username });
-  if (user && await bcrypt.compare(password, user.password)) {
-    req.session.userId = user._id;
-    res.redirect('/items');
-  } else {
-    res.render('login', { error: 'Invalid credentials' });
+passport.use(new FacebookStrategy({
+  clientID: process.env.FACEBOOK_APP_ID,
+  clientSecret: process.env.FACEBOOK_APP_SECRET,
+  callbackURL: process.env.CALLBACK_URL || "http://localhost:3000/auth/facebook/callback",
+  profileFields: ['id', 'displayName', 'emails']
+}, async (accessToken, refreshToken, profile, done) => {
+  let user = await User.findOne({ facebookId: profile.id });
+  if (!user) {
+    user = await new User({
+      facebookId: profile.id,
+      name: profile.displayName,
+      email: profile.emails?.[0]?.value || ''
+    }).save();
   }
+  done(null, user);
+}));
+
+passport.serializeUser((user, done) => done(null, user.id));
+passport.deserializeUser(async (id, done) => {
+  const user = await User.findById(id);
+  done(null, user);
 });
 
-app.post('/logout', (req, res) => {
-  req.session = null;
-  res.redirect('/login');
-});
+app.get('/', (req, res) => req.user ? res.redirect('/items') : res.redirect('/login'));
+app.get('/login', (req, res) => res.render('login'));
+app.get('/auth/facebook', passport.authenticate('facebook', { scope: ['email'] }));
+app.get('/auth/facebook/callback',
+  passport.authenticate('facebook', { failureRedirect: '/login' }),
+  (req, res) => res.redirect('/items')
+);
+app.get('/logout', (req, res) => { req.logout(() => {}); res.redirect('/login'); });
 
-// CRUD Pages
-app.get('/items', requireLogin, async (req, res) => {
+const ensureAuth = (req, res, next) => req.user ? next() : res.redirect('/login');
+
+app.get('/items', ensureAuth, async (req, res) => {
   const search = req.query.search || '';
-  const items = await Item.find({ title: { $regex: search, $options: 'i' } });
-  res.render('index', { items, search });
+  const items = await Item.find({
+    $or: [
+      { title: { $regex: search, $options: 'i' } },
+      { author: { $regex: search, $options: 'i' } }
+    ]
+  });
+  res.render('index', { items, search, user: req.user });
 });
 
-app.get('/items/create', requireLogin, (req, res) => res.render('create'));
-app.post('/items', requireLogin, async (req, res) => {
-  await Item.create(req.body);
+app.get('/items/create', ensureAuth, (req, res) => res.render('create'));
+app.post('/items', ensureAuth, async (req, res) => {
+  await new Item(req.body).save();
   res.redirect('/items');
 });
 
-app.get('/items/edit/:id', requireLogin, async (req, res) => {
+app.get('/items/edit/:id', ensureAuth, async (req, res) => {
   const item = await Item.findById(req.params.id);
   res.render('edit', { item });
 });
-
-app.post('/items/update/:id', requireLogin, async (req, res) => {
+app.post('/items/update/:id', ensureAuth, async (req, res) => {
   await Item.findByIdAndUpdate(req.params.id, req.body);
   res.redirect('/items');
 });
-
-app.post('/items/delete/:id', requireLogin, async (req, res) => {
+app.post('/items/delete/:id', ensureAuth, async (req, res) => {
   await Item.findByIdAndDelete(req.params.id);
   res.redirect('/items');
 });
 
-// RESTful API
-app.get('/api/items', async (req, res) => {
-  const items = await Item.find();
-  res.json(items);
-});
-
-app.post('/api/items', async (req, res) => {
-  const item = await Item.create(req.body);
-  res.json(item);
-});
-
-app.put('/api/items/:id', async (req, res) => {
-  const item = await Item.findByIdAndUpdate(req.params.id, req.body, { new: true });
-  res.json(item);
-});
-
+app.get('/api/items', async (req, res) => res.json(await Item.find()));
+app.post('/api/items', async (req, res) => res.json(await new Item(req.body).save()));
+app.put('/api/items/:id', async (req, res) => res.json(await Item.findByIdAndUpdate(req.params.id, req.body, { new: true })));
 app.delete('/api/items/:id', async (req, res) => {
   await Item.findByIdAndDelete(req.params.id);
   res.json({ message: 'Deleted' });
 });
 
-// Setup Default User
-app.get('/setup', async (req, res) => {
-  const hash = await bcrypt.hash('123456', 10);
-  await User.findOneAndUpdate(
-    { username: 'group47' },
-    { username: 'group47', password: hash },
-    { upsert: true }
-  );
-  res.send('User created: group47 / 123456');
-});
-
-app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
-  console.log(`Visit /setup to create admin user`);
-});
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => console.log(`Server running on port ${PORT}`));

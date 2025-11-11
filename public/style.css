@@ -1,0 +1,12 @@
+body { font-family: Arial; background: #f4f6f9; margin: 0; padding: 20px; }
+.container { max-width: 800px; margin: 0 auto; background: white; padding: 20px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+h1 { color: #1877f2; text-align: center; }
+input, button { padding: 10px; margin: 5px 0; width: 100%; border: 1px solid #ddd; border-radius: 5px; }
+button, .btn, .btn-small, .btn-delete { background: #1877f2; color: white; border: none; cursor: pointer; text-decoration: none; display: inline-block; padding: 8px 16px; border-radius: 5px; }
+button:hover, .btn:hover, .btn-small:hover { background: #166fe5; }
+.btn-delete { background: #e63946; }
+.btn-delete:hover { background: #d00000; }
+table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+th, td { border: 1px solid #ddd; padding: 10px; text-align: left; }
+th { background: #f0f2f5; }
+form[style="display:inline;"] { margin: 0; }

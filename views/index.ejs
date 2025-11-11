@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Books - Group 47</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <div class="container">
+    <h1>Book Management System</h1>
+    <p>Welcome, <strong><%= user.name %></strong> | <a href="/logout">Logout</a></p>
+
+    <form action="/items" method="GET">
+      <input type="text" name="search" placeholder="Search by title or author..." value="<%= search %>">
+      <button type="submit">Search</button>
+    </form>
+
+    <a href="/items/create" class="btn">Add New Book</a>
+
+    <table>
+      <thead>
+        <tr>
+          <th>Title</th>
+          <th>Author</th>
+          <th>ISBN</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        <% items.forEach(item => { %>
+          <tr>
+            <td><%= item.title %></td>
+            <td><%= item.author %></td>
+            <td><%= item.isbn %></td>
+            <td>
+              <a href="/items/edit/<%= item._id %>" class="btn-small">Edit</a>
+              <form action="/items/delete/<%= item._id %>" method="POST" style="display:inline;">
+                <button type="submit" class="btn-delete">Delete</button>
+              </form>
+            </td>
+          </tr>
+        <% }) %>
+      </tbody>
+    </table>
+  </div>
+</body>
+</html>

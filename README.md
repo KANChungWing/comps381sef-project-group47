@@ -1,94 +1,36 @@
-\# Book Management System - Group 47
+# Book Management System - Group 47
 
+## 1. Project Info
+- **Course**: COMP S3810SEF
+- **Group No.**: 47
+- **Members**:
+  - KAN Chung Wing (SID: 550xxxxxx)
 
+## 2. Project files
+- `server.js`: Express + Facebook OAuth + CRUD + REST API
+- `views/`: login.ejs, index.ejs, create.ejs, edit.ejs
+- `models/`: User & Item schema
+- `public/`: style.css
 
-\## 1. Project Info
+## 3. The cloud-based server URL
+http://你的EC2-IP:3000
 
-\- \*\*Course\*\*: COMP S381F
+## 4. Operation guides
 
-\- \*\*Group No.\*\*: 47
+### Use of Login/Logout pages
+- Click "Login with Facebook"
+- First time: Auto register
+- Logout: Click "Logout"
 
-\- \*\*Members\*\*:
+### Use of your CRUD web pages
+- **Create**: Click "Add Book"
+- **Read**: Search box (partial match)
+- **Update**: Click "Edit"
+- **Delete**: Click "Delete"
 
-&nbsp; - 陳同學 (SID: 550123456)
-
-&nbsp; - 黃同學 (SID: 550123457)
-
-
-
-\## 2. File Intro
-
-\- `server.js`: Express server with login, CRUD, REST API
-
-\- `package.json`: Dependencies
-
-\- `views/`: EJS templates
-
-\- `models/`: User \& Book schema
-
-\- `public/`: CSS
-
-
-
-\## 3. Cloud URL
-
-https://comps381f-group47.onrender.com
-
-
-
-\## 4. Operation Guide
-
-
-
-\### Login
-
-\- URL: `/login`
-
-\- \*\*Account\*\*: `group47` / `123456`
-
-\- First time? Visit `/setup`
-
-
-
-\### CRUD Web
-
-\- \*\*Create\*\*: Click "Add Book"
-
-\- \*\*Read\*\*: Search by title
-
-\- \*\*Update\*\*: Click "Edit"
-
-\- \*\*Delete\*\*: Click "Delete"
-
-\- \*\*Logout\*\*: Top-right button
-
-
-
-\### RESTful API (cURL)
-
-
-
+### Use of your RESTful CRUD services
 ```bash
-
-\# Read
-
-curl https://comps381f-group47.onrender.com/api/items
-
-
-
-\# Create
-
-curl -X POST -H "Content-Type: application/json" -d '{"title":"Node.js","author":"Ryan Dahl","isbn":"123"}' https://comps381f-group47.onrender.com/api/items
-
-
-
-\# Update
-
-curl -X PUT -H "Content-Type: application/json" -d '{"title":"Express.js"}' https://comps381f-group47.onrender.com/api/items/ID\_HERE
-
-
-
-\# Delete
-
-curl -X DELETE https://comps381f-group47.onrender.com/api/items/ID\_HERE
-
+curl http://你的IP:3000/api/items
+curl -X POST -H "Content-Type: application/json" -d "{\"title\":\"Test\"}" http://你的IP:3000/api/items
+curl -X PUT -H "Content-Type: application/json" -d "{\"title\":\"Updated\"}" http://你的IP:3000/api/items/ID
+curl -X DELETE http://你的IP:3000/api/items/ID

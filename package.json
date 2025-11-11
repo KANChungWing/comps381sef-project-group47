@@ -1,17 +1,16 @@
 {
   "name": "comps381f-project-group47",
   "version": "1.0.0",
-  "description": "COMP S381F Group 47 - Book Management System",
   "scripts": {
     "start": "node server.js"
   },
   "dependencies": {
-      "express": "^4.18.2",
-      "ejs": "^3.1.9",
-      "mongoose": "^7.5.0",
-      "cookie-session": "^2.0.0",
-      "passport": "^0.6.0",
-      "passport-facebook": "^3.0.0",
-      "dotenv": "^16.3.1"
-    }
+    "express": "^4.18.2",
+    "ejs": "^3.1.9",
+    "mongoose": "^7.5.0",
+    "cookie-session": "^2.0.0",
+    "passport": "^0.6.0",
+    "passport-google-oauth20": "^2.0.0",
+    "dotenv": "^16.3.1"
   }
+}

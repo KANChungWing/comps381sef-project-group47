@@ -3,7 +3,7 @@ const express = require('express');
 const mongoose = require('mongoose');
 const session = require('cookie-session');
 const passport = require('passport');
-const FacebookStrategy = require('passport-facebook').Strategy;
+const GoogleStrategy = require('passport-google-oauth20').Strategy;
 
 const app = express();
 
@@ -20,27 +20,40 @@ const db = mongoose.connection;
 db.on('error', () => console.log('MongoDB error'));
 db.once('open', () => console.log('MongoDB Connected'));
 
-const User = mongoose.model('User', new mongoose.Schema({ facebookId: String, name: String, email: String }));
+const User = mongoose.model('User', new mongoose.Schema({ googleId: String, name: String, email: String }));
 const Item = mongoose.model('Item', new mongoose.Schema({ title: String, author: String, isbn: String }));
 
-passport.use(new FacebookStrategy({
-  clientID: process.env.FACEBOOK_APP_ID,
-  clientSecret: process.env.FACEBOOK_APP_SECRET,
-  callbackURL: process.env.CALLBACK_URL,
-  profileFields: ['id', 'displayName', 'emails']
+passport.use(new GoogleStrategy({
+  clientID: process.env.GOOGLE_CLIENT_ID,
+  clientSecret: process.env.GOOGLE_CLIENT_SECRET,
+  callbackURL: process.env.GOOGLE_CALLBACK_URL || "http://3.26.99.126:3000/auth/google/callback"
 }, async (accessToken, refreshToken, profile, done) => {
-  let user = await User.findOne({ facebookId: profile.id });
-  if (!user) user = await new User({ facebookId: profile.id, name: profile.displayName, email: profile.emails?.[0]?.value }).save();
+  let user = await User.findOne({ googleId: profile.id });
+  if (!user) {
+    user = await new User({
+      googleId: profile.id,
+      name: profile.displayName,
+      email: profile.emails?.[0]?.value || ''
+    }).save();
+  }
   done(null, user);
 }));
 
 passport.serializeUser((user, done) => done(null, user.id));
-passport.deserializeUser(async (id, done) => { const user = await User.findById(id); done(null, user); });
+passport.deserializeUser(async (id, done) => {
+  const user = await User.findById(id);
+  done(null, user);
+});
 
 app.get('/', (req, res) => req.user ? res.redirect('/items') : res.redirect('/login'));
 app.get('/login', (req, res) => res.render('login'));
-app.get('/auth/facebook', passport.authenticate('facebook', { scope: ['email'] }));
-app.get('/auth/facebook/callback', passport.authenticate('facebook', { failureRedirect: '/login' }), (req, res) => res.redirect('/items'));
+
+app.get('/auth/google', passport.authenticate('google', { scope: ['profile', 'email'] }));
+app.get('/auth/google/callback',
+  passport.authenticate('google', { failureRedirect: '/login' }),
+  (req, res) => res.redirect('/items')
+);
+
 app.get('/logout', (req, res) => { req.logout(() => {}); res.redirect('/login'); });
 
 const ensureAuth = (req, res, next) => req.user ? next() : res.redirect('/login');
@@ -73,7 +86,10 @@ app.post('/items/delete/:id', ensureAuth, async (req, res) => {
 app.get('/api/items', async (req, res) => res.json(await Item.find()));
 app.post('/api/items', async (req, res) => res.json(await new Item(req.body).save()));
 app.put('/api/items/:id', async (req, res) => res.json(await Item.findByIdAndUpdate(req.params.id, req.body, { new: true })));
-app.delete('/api/items/:id', async (req, res) => { await Item.findByIdAndDelete(req.params.id); res.json({ message: 'Deleted' }); });
+app.delete('/api/items/:id', async (req, res) => {
+  await Item.findByIdAndDelete(req.params.id);
+  res.json({ message: 'Deleted' });
+});
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
